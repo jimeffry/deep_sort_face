@@ -1,23 +1,26 @@
 import numpy as np
 import sys
 import os
+import cv2
 from preprocessing import non_max_suppression
 from detection import Detection
 from tracker import Tracker
 from nn_matching import NearestNeighborDistanceMetric
-sys.path.append(os.path.join(os.path.dirname(__file__),'../extract_feature'))
+sys.path.append(os.path.join(os.path.dirname(__file__),'../extract_feature/pedestrian'))
 from feature_extractor import Extractor
+sys.path.append(os.path.join(os.path.dirname(__file__),'../extract_feature/face'))
+from face_model import mx_FaceRecognize
 sys.path.append(os.path.join(os.path.dirname(__file__),'../configs'))
 from config import cfgs
 
 
 class DeepSort(object):
-    def __init__(self, model_path, max_dist=0.2,use_cuda=False):
+    def __init__(self, model_path,epoch_num=0,max_dist=0.2,use_cuda=False):
         self.min_confidence = 0.3
         self.nms_max_overlap = 1.0
-
-        self.extractor = Extractor(model_path, use_cuda=use_cuda)
-
+        self.img_size = [112,112]
+        #self.extractor = Extractor(model_path, use_cuda=use_cuda)
+        self.extractor = mx_FaceRecognize(model_path,epoch_num,self.img_size)
         max_cosine_distance = max_dist
         nn_budget = 100
         metric = NearestNeighborDistanceMetric("cosine", max_cosine_distance, nn_budget)
@@ -72,7 +75,7 @@ class DeepSort(object):
         return bbox_xywh
 
 
-    def _xywh_to_xyxy(self, bbox_xywh):
+    def _xcycwh_to_xyxy(self, bbox_xywh):
         x,y,w,h = bbox_xywh
         x1 = max(int(x-w/2),0)
         x2 = min(int(x+w/2),self.width-1)
@@ -96,11 +99,15 @@ class DeepSort(object):
     def _get_features(self, bbox_xywh, ori_img):
         im_crops = []
         for box in bbox_xywh:
-            x1,y1,x2,y2 = self._xywh_to_xyxy(box)
+            _,_,w,h = box
+            x1,y1,x2,y2 = self._xcycwh_to_xyxy(box)
             im = ori_img[y1:y2,x1:x2]
+            #print('img',ori_img.shape)
+            if w != self.img_size[1] or h != self.img_size[0]:
+                im = cv2.resize(im,(self.img_size[1],self.img_size[0]))
             im_crops.append(im)
         if im_crops:
-            features = self.extractor(im_crops)
+            features = self.extractor.extractfeature(np.array(im_crops))
         else:
             features = np.array([])
         return features
