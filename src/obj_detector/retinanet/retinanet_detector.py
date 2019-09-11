@@ -32,7 +32,7 @@ def parms():
     parser.add_argument('--cuda', default=False, type=bool,
                         help='Use cuda in live demo')
     parser.add_argument('--img_path',type=str,default='',help='')
-    parser.add_argument('--load_num',type=int,default=0,help='load model num')
+    parser.add_argument('--person_load_num',type=int,default=0,help='load model num')
     parser.add_argument('--img_dir',type=str,default='',help='')
     parser.add_argument('--save_dir',type=str,default='',help='')
     return parser.parse_args()
@@ -43,7 +43,7 @@ class RetinanetDetector(object):
         self.img_dir = args.img_dir
         self.save_dir = args.save_dir
         self.build_net()
-        self.load_model(args.load_num)
+        self.load_model(args.person_load_num)
         self.laod_anchor()
     
     def build_net(self):
@@ -186,15 +186,17 @@ class RetinanetDetector(object):
         img_input = Variable(img_input.unsqueeze(0))
         if torch.cuda.is_available():
             img_input.cuda()
-        t1=time.time()
+        #t1=time.time()
         outputs,conf_maps = self.inference(img_input)  # forward pass
         scores, class_ids, box = outputs
         #print(class_ids)
+        scores = scores.data.cpu().numpy()
+        box = box.data.cpu().numpy()
         cls_id_idx = np.where(class_ids==0)
         scores = scores[cls_id_idx]
         class_ids = class_ids[cls_id_idx]
         box = box[cls_id_idx]
-        print('Elapsed time: {}'.format(time.time()-t1))
+        #print('Elapsed time: {}'.format(time.time()-t1))
         xmin, ymin, xmax, ymax = box[:,0],box[:,1],box[:,2],box[:,3]
         new_h,new_w,oy,ox = window[0],window[1],window[2],window[3]
         box[:,0] = (xmin - ox) / float(new_w) * img_w
@@ -211,8 +213,8 @@ class RetinanetDetector(object):
         #self.label_show_org(scores,class_ids,box,frame)
         box[:,2] = box[:,2] - box[:,0]
         box[:,3] = box[:,3] - box[:,1]
-        return frame,conf_maps
-        #return box,scores
+        #return frame,conf_maps
+        return box,scores
 
     def get_hotmaps(self,conf_maps):
         '''

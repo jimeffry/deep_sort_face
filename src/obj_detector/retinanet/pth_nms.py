@@ -2,47 +2,6 @@ import torch
 #from ._ext import nms
 import numpy as np
 
-def pth_nms_(dets, thresh):
-  """
-  dets has to be a tensor
-  """
-  if 1 : #not dets.is_cuda:
-    x1 = dets[:, 0]
-    y1 = dets[:, 1]
-    x2 = dets[:, 2]
-    y2 = dets[:, 3]
-    scores = dets[:, 4]
-
-    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
-    order = scores.sort(0, descending=True)[1]
-    # order = torch.from_numpy(np.ascontiguousarray(scores.numpy().argsort()[::-1])).long()
-
-    keep = torch.LongTensor(dets.size(0))
-    num_out = torch.LongTensor(1)
-    nms.cpu_nms(keep, num_out, dets, order, areas, thresh)
-
-    return keep[:num_out[0]]
-  else:
-    x1 = dets[:, 0]
-    y1 = dets[:, 1]
-    x2 = dets[:, 2]
-    y2 = dets[:, 3]
-    scores = dets[:, 4]
-
-    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
-    order = scores.sort(0, descending=True)[1]
-    # order = torch.from_numpy(np.ascontiguousarray(scores.cpu().numpy().argsort()[::-1])).long().cuda()
-
-    dets = dets[order].contiguous()
-
-    keep = torch.LongTensor(dets.size(0))
-    num_out = torch.LongTensor(1)
-    # keep = torch.cuda.LongTensor(dets.size(0))
-    # num_out = torch.cuda.LongTensor(1)
-    nms.gpu_nms(keep, num_out, dets, thresh)
-
-    return order[keep[:num_out[0]].cuda()].contiguous()
-    # return order[keep[:num_out[0]]].contiguous()
 def pth_nms(boxes, scores=None,overlap=0.5, top_k=500):
     """Apply non-maximum suppression at test time to avoid detecting too many
     overlapping bounding boxes for a given object.
@@ -56,9 +15,10 @@ def pth_nms(boxes, scores=None,overlap=0.5, top_k=500):
     """
     if scores is None:
         scores = boxes[:,4]
+    count = 0
     keep = scores.new(scores.size(0)).zero_().long()
     if boxes.numel() == 0:
-        return keep
+        return keep,count
     x1 = boxes[:, 0]
     y1 = boxes[:, 1]
     x2 = boxes[:, 2]
@@ -75,7 +35,6 @@ def pth_nms(boxes, scores=None,overlap=0.5, top_k=500):
     h = boxes.new()
 
     # keep = torch.Tensor()
-    count = 0
     while idx.numel() > 0:
         i = idx[-1]  # index of current largest val
         # keep.append(i)
@@ -109,3 +68,46 @@ def pth_nms(boxes, scores=None,overlap=0.5, top_k=500):
         # keep only elements with an IoU <= overlap
         idx = idx[IoU.le(overlap)]
     return keep,count
+
+def pth_nms_(boxes,scores=None, overlap=0.5,topk=200,mode='Union'):
+    pick = []
+    count = 0
+    if scores is None:
+        scores = boxes[:,4]
+    if boxes.size()==0:
+        return pick,count
+    x1 = boxes[:,0]
+    y1 = boxes[:,1]
+    x2 = boxes[:,2]
+    y2 = boxes[:,3]
+    #s  = np.array(scores)
+    #area = np.multiply(x2-x1+1, y2-y1+1)
+    w = x2 - x1 + 1
+    h = y2 - y1 + 1
+    w = torch.clamp(w, min=0.0)
+    h = torch.clamp(h, min=0.0)
+    areas = w * h
+    v, idx = scores.sort(0)
+    idx = idx[-topk:] 
+    #I[-1] have hightest prob score, I[0:-1]->others
+    #print('test',y2[idx[0:-1]].size())
+    while len(idx)>0:
+        xx1 = torch.max(x1[idx[-1]],x1[idx[0:-1]])
+        yy1 = torch.max(y1[idx[-1]],y1[idx[0:-1]])
+        xx2 = torch.max(x2[idx[-1]],x2[idx[0:-1]])
+        yy2 = torch.max(y2[idx[-1]],y2[idx[0:-1]])
+        in_w = xx2 - xx1 + 1
+        in_h = yy2 - yy1 + 1
+        in_w = torch.clamp(in_w,min=0.0)
+        in_h = torch.clamp(in_h,min=0.0)
+        inter = in_w * in_h
+        if mode == 'Min':
+            iou = inter / torch.min(areas[idx[-1]], areas[idx[0:-1]])
+        else:
+            iou = inter / (areas[idx[-1]] + areas[idx[0:-1]] - inter)
+        pick.append(idx[-1])
+        count +=1
+        mask = iou.le(overlap)
+        idx = idx[:-1]
+        idx = idx[mask]
+    return pick,count

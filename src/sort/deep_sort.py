@@ -15,28 +15,30 @@ from config import cfgs
 
 
 class DeepSort(object):
-    def __init__(self, model_path,epoch_num=0,max_dist=0.2,use_cuda=False):
+    def __init__(self, model_path,epoch_num=0,max_dist=0.2,use_cuda=False,mot_type='face'):
         self.min_confidence = 0.3
         self.nms_max_overlap = 1.0
         self.img_size = [112,112]
-        #self.extractor = Extractor(model_path, use_cuda=use_cuda)
-        self.extractor = mx_FaceRecognize(model_path,epoch_num,self.img_size)
-        max_cosine_distance = max_dist
+        self.mot_type = mot_type
+        if mot_type == 'person':
+            self.extractor = Extractor(model_path, use_cuda=use_cuda)
+        else:
+            self.extractor = mx_FaceRecognize(model_path,epoch_num,self.img_size)
+        max_cosine_distance = cfgs.max_cosine_distance #max_dist
         nn_budget = 100
         metric = NearestNeighborDistanceMetric("cosine", max_cosine_distance, nn_budget)
         self.tracker = Tracker(metric)
         self.feature_tmp = []
 
-    def update(self, bbox_xywh, confidences, ori_img,update_fg=True):
+    def update(self, bbox_xcycwh, confidences, ori_img,update_fg=True):
         self.height, self.width = ori_img.shape[:2]
         # generate detections
-        if update_fg or not(len(bbox_xywh)==len(self.feature_tmp)):
-            features = self._get_features(bbox_xywh, ori_img)
+        if update_fg or not(len(bbox_xcycwh)==len(self.feature_tmp)):
+            features = self._get_features(bbox_xcycwh, ori_img)
             self.feature_tmp = features
         else:
             features = self.feature_tmp
-        #bbox_tlwh = self._xywh_to_tlwh(bbox_xywh)
-        detections = [Detection(bbox_xywh[i], conf, features[i]) for i,conf in enumerate(confidences) if conf>self.min_confidence]
+        detections = [Detection(bbox_xcycwh[i], conf, features[i]) for i,conf in enumerate(confidences) if conf>self.min_confidence]
 
         # run on non-maximum supression
         # boxes = np.array([d.tlwh for d in detections])
@@ -96,18 +98,19 @@ class DeepSort(object):
         y2 = min(int(y+h),self.height-1)
         return x1,y1,x2,y2
     
-    def _get_features(self, bbox_xywh, ori_img):
+    def _get_features(self, bbox_xcycwh, ori_img):
         im_crops = []
-        for box in bbox_xywh:
+        for box in bbox_xcycwh:
             _,_,w,h = box
             x1,y1,x2,y2 = self._xcycwh_to_xyxy(box)
             im = ori_img[y1:y2,x1:x2]
             #print('img',ori_img.shape)
-            if w != self.img_size[1] or h != self.img_size[0]:
+            if self.mot_type=='face':
+                #if w != self.img_size[1] or h != self.img_size[0]:
                 im = cv2.resize(im,(self.img_size[1],self.img_size[0]))
             im_crops.append(im)
-        if im_crops:
-            features = self.extractor.extractfeature(np.array(im_crops))
+        if len(im_crops)>0:
+            features = self.extractor.extractfeature(np.array(im_crops)) if self.mot_type=='face' else self.extractor(im_crops)
         else:
             features = np.array([])
         return features

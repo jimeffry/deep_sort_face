@@ -1,10 +1,14 @@
 # vim: expandtab:ts=4:sw=4
 from __future__ import absolute_import
 import numpy as np
+import os 
+import sys
 #from sklearn.utils.linear_assignment_ import linear_assignment
 from scipy.optimize import linear_sum_assignment as linear_assignment
 from kalman_filter import chi2inv95
 from utils_mot import feature2Maha_metric
+sys.path.append(os.path.join(os.path.dirname(__file__),'../configs'))
+from config import cfgs
 
 
 def min_cost_matching(
@@ -132,7 +136,8 @@ def matching_cascade(
         ]
         if len(track_indices_l) == 0:  # Nothing to match at this level
             continue
-        print('cascade track:',track_indices_l)
+        if cfgs.debug:
+            print('cascade track:',track_indices_l)
         #cost_matrix = distance_metric(tracks, detections,track_indices_l, unmatched_detections)
         cost_matrix = feature2Maha_metric(tracks, detections,track_indices_l, unmatched_detections,distance_metric,kalman)
         matches_l, _, unmatched_detections = \

@@ -57,7 +57,8 @@ class Tracker(object):
 
         This function should be called once every time step, before `update`.
         """
-        print('tracker pred:',len(self.tracks))
+        if cfgs.debug:
+            print('tracker pred:',len(self.tracks))
         for track in self.tracks:
             track.predict(self.kf)
             #print('run predict')
@@ -71,12 +72,14 @@ class Tracker(object):
             A list of detections at the current time step.
 
         """
-        print('updata_detect:',len(detections))
+        if cfgs.debug:
+            print('updata_detect:',len(detections))
         # Run matching cascade.
         matches, unmatched_tracks, unmatched_detections = \
             self._match(detections)
-        print('unmatch_track for delete:',len(unmatched_tracks))
-        print('unmatch_det for init track:',len(unmatched_detections))
+        if cfgs.debug:
+            print('unmatch_track for delete:',len(unmatched_tracks))
+            print('unmatch_det for init track:',len(unmatched_detections))
         # Update track set.
         for track_idx, detection_idx in matches:
             #print("run match")
@@ -92,7 +95,8 @@ class Tracker(object):
 
         # Update distance metric.
         active_targets = [t.track_id for t in self.tracks if t.is_confirmed()]
-        print('activate:',len(active_targets))
+        if cfgs.debug:
+            print('activate:',len(active_targets))
         features, targets = [], []
         for track in self.tracks:
             #print('track_feature',len(track.features))
@@ -110,7 +114,8 @@ class Tracker(object):
             i for i, t in enumerate(self.tracks) if t.is_confirmed()]
         unconfirmed_tracks = [
             i for i, t in enumerate(self.tracks) if not t.is_confirmed()]
-        print('confirm and unconfirm:',len(confirmed_tracks),len(unconfirmed_tracks))
+        if cfgs.debug:
+            print('confirm and unconfirm:',len(confirmed_tracks),len(unconfirmed_tracks))
         # Associate confirmed tracks using appearance features.
         matches_a, unmatched_tracks_a, unmatched_detections = \
             matching_cascade(self.metric,self.kf, self.metric.matching_threshold, self.max_age,
@@ -127,10 +132,11 @@ class Tracker(object):
             min_cost_matching(
                 cost_matrix, self.max_iou_distance, self.tracks,
                 detections, iou_track_candidates, unmatched_detections)
-        print('iou mach tracks:: unconfirm and unmatch_track:',iou_track_candidates)
-        print("matcha and matchb",len(matches_a),len(matches_b))
-        print('a:',matches_a)
-        print('b:',matches_b)
+        if cfgs.debug:
+            print('iou mach tracks:: unconfirm and unmatch_track:',iou_track_candidates)
+            print("matcha and matchb",len(matches_a),len(matches_b))
+            print('a:',matches_a)
+            print('b:',matches_b)
         matches = matches_a + matches_b
         unmatched_tracks = list(set(unmatched_tracks_a + unmatched_tracks_b))
         return matches, unmatched_tracks, unmatched_detections

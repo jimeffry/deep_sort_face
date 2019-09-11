@@ -33,8 +33,8 @@ cfgs.lr_gamma = 0.1
 cfgs.epoch_num = 120000
 #*******************************************************test
 cfgs.top_k = 300
-cfgs.score_threshold = 0.2
-cfgs.nms_threshold = 0.45
+cfgs.score_threshold = 0.5
+cfgs.nms_threshold = 0.45 #0.45
 cfgs.model_dir = '/data/models/retinanet'
 
 # cfgs.shownames = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',

@@ -11,15 +11,24 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__),'../tracker'))
 from staple import Staple
 from mosse import MOSSE
+from dat import DAT
 sys.path.append(os.path.join(os.path.dirname(__file__),'../configs'))
 from staple_config import StapleConfig
 
 class TrackerRun(object):
-    def __init__(self,tracker):
-        self.tracker = tracker
+    def __init__(self,tracker_type):
+        self.tracker_type = tracker_type
 
     def init(self,frame,bboxes):
-        self.tracks = [self.tracker for i in bboxes]
+        self.tracks = []
+        for tmp in bboxes:
+            if self.tracker_type=='mosse':
+                self.tracks.append(MOSSE())
+            elif self.tracker_type=='staple':
+                self.tracks.append(Staple(config=StapleConfig()))
+            elif self.tracker_type=='dat':
+                self.tracks.append(DAT())
+        #self.tracks = [self.tracker for i in bboxes]
         for idx, track_tmp in enumerate(self.tracks):
             track_tmp.init(frame,bboxes[idx])
 
