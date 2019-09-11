@@ -1,5 +1,5 @@
 # Deep Sort with PyTorch
-
+* [The original code is here](https://github.com/nwojke/deep_sort)
 
 ## References
 - paper: [Simple Online and Realtime Tracking with a Deep Association Metric](https://arxiv.org/abs/1703.07402)
@@ -9,6 +9,3 @@
 - paper: [YOLOv3](https://pjreddie.com/media/files/papers/YOLOv3.pdf)
 
 - code: [Joseph Redmon/yolov3](https://pjreddie.com/darknet/yolo/)
-
-
-
