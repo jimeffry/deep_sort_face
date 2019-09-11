@@ -17,7 +17,7 @@ import math
 import cv2
 import time
 from tools_mxnet import nms, adjust_input,detect_first_stage
-from utils import alignImg_opencv,label_show,alignImg
+from mtcnn_utils import alignImg_opencv,label_show,alignImg
 sys.path.append(os.path.join(os.path.dirname(__file__),'../../configs'))
 from mtcnn_config import config
 

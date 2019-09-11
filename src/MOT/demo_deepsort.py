@@ -4,14 +4,18 @@ import cv2
 import time
 import argparse
 import numpy as np
+from tracker_run import TrackerRun,MoveTrackerRun
 sys.path.append(os.path.join(os.path.dirname(__file__),'../obj_detector/pedestrian'))
 from detector import YOLOv3
+sys.path.append(os.path.join(os.path.dirname(__file__),'../obj_detector/retinanet'))
+from retinanet_detector import RetinanetDetector
 sys.path.append(os.path.join(os.path.dirname(__file__),'../obj_detector/face'))
 from Detector_mxnet import MtcnnDetector
 sys.path.append(os.path.join(os.path.dirname(__file__),'../sort'))
 from deep_sort import DeepSort
 sys.path.append(os.path.join(os.path.dirname(__file__),'../utils'))
 from util import COLORS_10, draw_bboxes
+from blurdetect import BlurDetection
 sys.path.append(os.path.join(os.path.dirname(__file__),'../tracker'))
 from kalman_filter_track import KalmanFilter
 from staple import Staple
@@ -37,10 +41,13 @@ class MOTTracker(object):
         self.meanes_track = []
         self.convariances_track = []
         self.id_cnt_dict = dict()
-        if args.tracker_type=='moss':
+        if args.tracker_type=='mosse':
             self.tracker=MOSSE()
         elif args.tracker_type=='staple':
             self.tracker=Staple(config=StapleConfig())
+        self.tracker_run = TrackerRun(self.tracker)
+        self.img_clarity = BlurDetection()
+        self.score = 60.0
 
     def __enter__(self):
         assert os.path.isfile(self.args.VIDEO_PATH), "Error: path error"
@@ -61,43 +68,6 @@ class MOTTracker(object):
     def __exit__(self, exc_type, exc_value, exc_traceback):
         if exc_type:
             print(exc_type, exc_value, exc_traceback)
-
-    def track_init(self,bbox_xyah):
-        means = []
-        convariances = []
-        for box in bbox_xyah:
-            mean,convariance = self.kf.initiate(box)
-            #print(mean)
-            means.append(mean)
-            convariances.append(convariance)
-        self.means_track = means
-        self.convariances_track = convariances
-
-    def track_predict(self):
-        self.mean_update = []
-        self.convariance_update = []
-        for mean_tmp, conv_tmp in zip(self.means_track,self.convariances_track):
-            mean, convariance = self.kf.predict(mean_tmp,conv_tmp)
-            self.mean_update.append(mean)
-            self.convariance_update.append(convariance)
-        #print('pred:',np.shape(self.mean_update))
-        self.means_track = self.mean_update
-        self.convariances_track = self.convariance_update
-    
-    def track_update(self,detect_box):
-        self.means_track = []
-        self.convariances_track = []
-        idx = 0
-        for mean_tmp,conv_tmp in zip(self.mean_update,self.convariance_update):
-            #detect_tmp = mean_tmp[:4]
-            #detect_tmp[:2] = detect_tmp[:2] +1
-            detect_tmp = detect_box[idx]
-            idx+=1
-            mean, convariance = self.kf.update(mean_tmp,conv_tmp,detect_tmp)
-            #print('updata:',np.shape(mean))
-            self.means_track.append(mean)
-            self.convariances_track.append(convariance)
-        #print('update:',np.shape(self.means_track))
 
     def xcycah2xcyc(self,xyah):
         xyah = np.array(xyah)
@@ -129,6 +99,16 @@ class MOTTracker(object):
         w = xywh[:,2] - xywh[:,0]
         h = xywh[:,3] - xywh[:,1]
         return np.vstack([xywh[:,0],xywh[:,1],w,h]).T
+    def xywh2xcycwh(self,xywh):
+        xywh = np.array(xywh)
+        xc = xywh[:,0]+xywh[:,2]/2
+        yc = xywh[:,1]+xywh[:,3]/2
+        return np.vstack([xc,yc,xywh[:,2],xywh[:,3]]).T
+    def xywh2xyxy(self,xywh):
+        xywh = np.array(xywh)
+        x2 = xywh[:,0]+xywh[:,2]
+        y2 = xywh[:,1]+xywh[:,3]
+        return np.vstack([xywh[:,0],xywh[:,1],x2,y2]).T
 
     def xcyc2xcycah(self,bbox_xcycwh):
         bbox_xcycwh = np.array(bbox_xcycwh,dtype=np.float32)
@@ -136,7 +116,19 @@ class MOTTracker(object):
         yc = bbox_xcycwh[:,1] #- bbox_xcycwh[:,3]/2
         a = bbox_xcycwh[:,2] / bbox_xcycwh[:,3]
         return np.vstack([xc,yc,a,bbox_xcycwh[:,3]]).T
-
+    def widerbox(self,boxes):
+        x1 = boxes[:,0]
+        y1 = boxes[:,1]
+        x2 = boxes[:,2]
+        y2 = boxes[:,3]
+        boxw = x2-x1
+        boxh = y2-y1
+        x1 = np.maximum(0,x1-0.3*boxw)
+        y1 = np.maximum(0,y1-0.3*boxh)
+        x2 = np.minimum(self.im_width,x2+0.3*boxw)
+        y2 = np.minimum(self.im_height,y2+0.3*boxh)
+        return np.vstack([x1,y1,x2,y2]).T
+        
     def save_track_results(self,bbox_xyxy,img,identities,offset=[0,0]):
         for i,box in enumerate(bbox_xyxy):
             x1,y1,x2,y2 = [int(i) for i in box]
@@ -150,14 +142,17 @@ class MOTTracker(object):
             y2 = min(max(y2,0),self.im_height-1)
             # box text and bar
             id = str(identities[i]) if identities is not None else '0'
-            tmp_cnt = self.id_cnt_dict.setdefault(id,0)
-            self.id_cnt_dict[id] = tmp_cnt+1
             crop_img = img[y1:y2,x1:x2,:]
-            save_dir = os.path.join(self.args.save_path,id)
-            if not os.path.exists(save_dir):
-                os.makedirs(save_dir)
-            save_path = os.path.join(save_dir,id+'_'+str(tmp_cnt)+'.jpg')
-            cv2.imwrite(save_path,crop_img)
+            if self.img_clarity._blurrDetection(crop_img) > self.score:
+                tmp_cnt = self.id_cnt_dict.setdefault(id,0)
+                self.id_cnt_dict[id] = tmp_cnt+1
+                save_dir = os.path.join(self.args.save_path,id)
+                if not os.path.exists(save_dir):
+                    os.makedirs(save_dir)
+                save_path = os.path.join(save_dir,id+'_'+str(tmp_cnt)+'.jpg')
+                cv2.imwrite(save_path,crop_img)
+            else:
+                continue
 
     def detect(self):
         cnt = 0
@@ -170,7 +165,7 @@ class MOTTracker(object):
             _, ori_im = self.vdo.retrieve()
             im = cv2.cvtColor(ori_im, cv2.COLOR_BGR2RGB)
             im = np.array([im])
-            if cnt % 5 ==0 or detect_fg:
+            if cnt % 6 ==0 or detect_fg:
                 # bbox_xcycwh, cls_conf, cls_ids = self.yolo3(im)
                 # mask = cls_ids==0
                 # bbox_xcycwh = bbox_xcycwh[mask]
@@ -181,6 +176,8 @@ class MOTTracker(object):
                 if len(rectangles) <1:
                     continue
                 bboxes = rectangles[:,:4]
+                bboxes = self.widerbox(bboxes)
+                #outputs = bboxes
                 bbox_xcycwh = self.xyxy2xcyc(bboxes)
                 cls_conf = rectangles[:,4]
                 update_fg = True
@@ -188,16 +185,18 @@ class MOTTracker(object):
                     #box_xcycah = self.xcyc2xcycah(bbox_xcycwh)
                     detect_xywh = self.xyxy2xywh(bboxes)
                     #self.track_init(box_xcycah)
-                    self.tracker.init(im,detect_xywh)
+                    self.tracker_run.init(ori_im,detect_xywh)
                     detect_fg = False
                     #self.track_predict()
                     #self.track_update(box_xcycah)
             else:
                 #print('************here')
                 if bbox_xcycwh is not None:
-                    self.track_predict()
-                    #show_box = self.xyah2xyxy(self.means_track)
-                    bbox_xcycwh = self.xcycah2xcyc(self.means_track)
+                    #self.track_predict()
+                    #bbox_xcycwh = self.xcycah2xcyc(self.means_track)
+                    boxes_tmp = self.tracker_run.update(ori_im)
+                    bbox_xcycwh = self.xywh2xcycwh(boxes_tmp)
+                    #outputs = self.xywh2xyxy(boxes_tmp)
                     update_fg = False
                     detect_fg = False
                 else:
@@ -205,26 +204,29 @@ class MOTTracker(object):
             if bbox_xcycwh is not None:
                 # select class person
                 #print('detect_box:',bbox_xcycwh.shape)
-                outputs = self.deepsort.update(bbox_xcycwh, cls_conf, im[0],update_fg)
+                outputs = self.deepsort.update(bbox_xcycwh, cls_conf, ori_im,update_fg)
             end = time.time()
             consume = end-start
             if len(outputs) > 0:
+                #outputs = rectangles
                 bbox_xyxy = outputs[:,:4]
-                identities = outputs[:,-1] #np.zeros(show_box.shape[0]) #
+                identities = outputs[:,-1] #outputs[:,-1] #np.zeros(outputs.shape[0]) 
                 ori_im = draw_bboxes(ori_im, bbox_xyxy, identities)
                 #self.save_track_results(bbox_xyxy,ori_im,identities)
             print("frame: {} time: {}s, fps: {}".format(cnt,consume, 1/(end-start)))
 
-            if self.args.display:
-                cv2.imshow("test", ori_im)
-                cv2.waitKey(1)
-
+            cv2.imshow("test", ori_im)
+            c = cv2.waitKey(1) & 0xFF
+            if c==27 or c==ord('q'):
+                break
             #if self.args.save_path:
              #   self.output.write(ori_im)
             cnt +=1
             total_time += consume
             #if cnt ==10:
              #   break
+        self.vdo.release()
+        cv2.destroyAllWindows()
         print("video ave fps: ",cnt/total_time,total_time)
 
 def parse_args():
@@ -245,6 +247,7 @@ def parse_args():
     parser.add_argument("--load_num",type=int,default=0,help='')
     parser.add_argument("--detect_model",type=str,default="../../models/mxnet_model")
     parser.add_argument("--feature_model",type=str,default="../../models/mxnet")
+    parser.add_argument('--tracker_type',type=str,default='mosse')
     return parser.parse_args()
 
 
