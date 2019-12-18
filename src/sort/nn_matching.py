@@ -133,8 +133,9 @@ class NearestNeighborDistanceMetric(object):
         self.matching_threshold = matching_threshold
         self.budget = budget
         self.samples = {}
+        self.trajects = {}
 
-    def partial_fit(self, features, targets, active_targets):
+    def partial_fit(self, features,centers, targets, active_targets):
         """Update the distance metric with new data.
 
         Parameters
@@ -147,11 +148,18 @@ class NearestNeighborDistanceMetric(object):
             A list of targets that are currently present in the scene.
 
         """
-        for feature, target in zip(features, targets):
+        print(len(features),len(centers),len(targets))
+        for i in range(len(features)):
+            feature = features[i]
+            target = targets[i]
+            center = centers[i]
             self.samples.setdefault(target, []).append(feature)
-            if self.budget is not None:
-                self.samples[target] = self.samples[target][-self.budget:]
+            self.trajects.setdefault(target,[]).append(center)
+            # if self.budget is not None:
+            #     self.samples[target] = self.samples[target][-self.budget:]
+            #     self.trajects[target] = self.trajects[target][-self.budget:]
         self.samples = {k: self.samples[k] for k in active_targets}
+        self.trajects = {tmp:self.trajects[tmp] for tmp in active_targets}
         #print("keep track feature keys:",self.samples.keys())
 
     def distance(self, features, targets):

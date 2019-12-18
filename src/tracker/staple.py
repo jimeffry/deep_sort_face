@@ -43,7 +43,7 @@ def crop_filter_response(response_cf, response_sz):
     return new_responses.T
 
 
-def get_center_likelihood(likelihood_map, m):
+def get_center_likelihood_(likelihood_map, m):
     h, w = likelihood_map.shape[:2]
     n1 = h - m[1] + 1
     n2 = w - m[0] + 1
@@ -59,8 +59,26 @@ def get_center_likelihood(likelihood_map, m):
     sat4 = np.roll(sat, -m[0], axis=1)
     sat4 = sat4[i, j]
     center_likelihood = (sat1 + sat2 - sat3 - sat4) / (m[0] * m[1])
+    print(center_likelihood.shape)
     return center_likelihood.T
 
+def get_center_likelihood(likelihood_map,target_sz):
+    map_h,map_w = likelihood_map.shape[:2]
+    tl_h = map_h - target_sz[1]+1
+    tl_w = map_w - target_sz[0]+1
+    y, x = np.arange(tl_h), np.arange(tl_w)
+    x,y = np.meshgrid(x,y)
+    r=x.flatten()+target_sz[0]
+    b=y.flatten()+target_sz[1]
+    bl=np.array([b,x.flatten()]).T
+    br=np.array([b,r]).T
+    tl=np.array([y.flatten(),x.flatten()]).T
+    tr=np.array([y.flatten(),r]).T
+    integral_prob_map = cv2.integral(likelihood_map)
+    v_scores=integral_prob_map[br[:,0],br[:,1]]-integral_prob_map[bl[:,0],bl[:,1]]-integral_prob_map[tr[:,0],tr[:,1]]+integral_prob_map[tl[:,0],tl[:,1]]
+    #print(v_scores.shape)
+    v_scores = np.reshape(v_scores,[tl_h,tl_w])
+    return v_scores/(map_h*map_w)
 
 class Staple(BaseCF):
     def __init__(self, config):
@@ -143,7 +161,6 @@ class Staple(BaseCF):
             # w,h format
             self.offset = [[0, -self.target_sz[1]], [-self.target_sz[0], 0],
                            [0, self.target_sz[1]], [self.target_sz[0], 0]]
-
         if self.scale_adaptation is True:
             self.scale_factor = 1
             self.base_target_sz = self.target_sz
@@ -174,7 +191,8 @@ class Staple(BaseCF):
             self.max_scale_factor = self.scale_step ** (
                 int(np.floor((np.log(min(first_frame.shape[1] / self.w, first_frame.shape[0] / self.h)) /
                               np.log(self.scale_step)))))
-        im_patch_bg = self.get_sub_window(first_frame, self._center, self.norm_bg_area, self.bg_area)
+        #im_patch_bg = self.get_sub_window(first_frame, self._center, self.norm_bg_area, self.bg_area)
+        im_patch_bg = patch_padded.copy()
         xt = self.get_feature_map(im_patch_bg, self.hog_cell_size)
         xt = self._window[:, :, None] * xt
         xtf = fft2(xt)

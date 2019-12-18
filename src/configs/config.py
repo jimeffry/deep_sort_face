@@ -14,3 +14,4 @@ cfgs.feature_max_keep = 100
 cfgs.max_iou_distance=0.7
 cfgs.max_age=70
 cfgs.confirm_frame_cnt=3
+cfgs.inout_point = [200,0]

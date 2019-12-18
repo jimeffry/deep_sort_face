@@ -97,17 +97,20 @@ class Tracker(object):
         active_targets = [t.track_id for t in self.tracks if t.is_confirmed()]
         if cfgs.debug:
             print('activate:',len(active_targets))
-        features, targets = [], []
+        #update when run detect
+        features,centers, targets = [], [],[]
         for track in self.tracks:
             #print('track_feature',len(track.features))
             if not track.is_confirmed():
                 continue
             features += track.features
+            centers += track.trajects
             targets += [track.track_id for _ in track.features]
-            track.features = []
-        self.metric.partial_fit(
-            np.asarray(features), np.asarray(targets), active_targets)
-
+            # track.features = []
+            # track.trajects = []
+        # keep features for activate ids,# keep trajectory for activate ids
+        self.metric.partial_fit(features,centers,targets, active_targets)
+    
     def _match(self, detections):
         # Split track set into confirmed and unconfirmed tracks.
         confirmed_tracks = [
@@ -145,5 +148,5 @@ class Tracker(object):
         mean, covariance = self.kf.initiate(detection.to_xyah())
         self.tracks.append(Track(
             mean, covariance, self._next_id, self.n_init, self.max_age,
-            detection.feature))
+            detection.feature,detection.center))
         self._next_id += 1

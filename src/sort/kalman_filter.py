@@ -86,8 +86,8 @@ class KalmanFilter(object):
         return mean, covariance
 
     def predict(self, mean, covariance):
-        """Run Kalman filter prediction step.
-
+        """
+        Run Kalman filter prediction step.
         Parameters
         ----------
         mean : ndarray
@@ -96,13 +96,11 @@ class KalmanFilter(object):
         covariance : ndarray
             The 8x8 dimensional covariance matrix of the object state at the
             previous time step.
-
         Returns
         -------
         (ndarray, ndarray)
             Returns the mean vector and covariance matrix of the predicted
             state. Unobserved velocities are initialized to 0 mean.
-
         """
         std_pos = [
             self._std_weight_position * mean[3],

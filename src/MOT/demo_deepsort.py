@@ -11,6 +11,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__),'../obj_detector/retinane
 from retinanet_detector import RetinanetDetector
 sys.path.append(os.path.join(os.path.dirname(__file__),'../obj_detector/face'))
 from Detector_mxnet import MtcnnDetector
+sys.path.append(os.path.join(os.path.dirname(__file__),'../obj_detector/head'))
+from head_detector import HeadDetect
 sys.path.append(os.path.join(os.path.dirname(__file__),'../sort'))
 from deep_sort import DeepSort
 sys.path.append(os.path.join(os.path.dirname(__file__),'../utils'))
@@ -23,12 +25,8 @@ from kalman_filter_track import KalmanFilter
 class MOTTracker(object):
     def __init__(self, args):
         self.args = args
-        if args.display:
-            cv2.namedWindow("test", cv2.WINDOW_NORMAL)
-            cv2.resizeWindow("test", args.display_width, args.display_height)
-
-        self.vdo = cv2.VideoCapture()
-        #self.yolo3 = YOLOv3(args.yolo_cfg, args.yolo_weights, args.yolo_names,use_cuda=args.use_cuda, is_xywh=True, conf_thresh=args.conf_thresh, nms_thresh=args.nms_thresh)
+        self.open_video()
+        #self.yolo3 = YOLOv3(args.yolo_cfg, args.yolo_weights, args.yolo_names,use_cuda=args.ctx, is_xywh=True, conf_thresh=args.conf_thresh, nms_thresh=args.nms_thresh)
         self.command_type = args.mot_type
         threshold = np.array([0.7,0.8,0.9])
         crop_size = [112,112]
@@ -36,9 +34,10 @@ class MOTTracker(object):
             self.mtcnn =  MtcnnDetector(threshold,crop_size,args.detect_model)
         elif self.command_type == 'person':
             self.person_detect =  RetinanetDetector(args)
-        #self.deepsort = DeepSort(args.deepsort_checkpoint,use_cuda=args.use_cuda)
-        self.deepsort = DeepSort(args.feature_model,args.face_load_num,use_cuda=args.use_cuda,mot_type=self.command_type)
+        elif self.command_type == 'head':
+            self.head_detect = HeadDetect(args)
         self.kf = KalmanFilter()
+        self.deepsort=DeepSort(args.feature_model,args.face_load_num,mot_type=args.mot_type)
         self.meanes_track = []
         self.convariances_track = []
         self.id_cnt_dict = dict()
@@ -46,47 +45,22 @@ class MOTTracker(object):
         self.moveTrack = MoveTrackerRun(self.kf)
         self.img_clarity = BlurDetection()
         self.score = 60.0
+        self.in_num = 0
+        self.out_num = 0
 
-    def __enter__(self):
-        assert os.path.isfile(self.args.VIDEO_PATH), "Error: path error"
-        self.vdo.open(self.args.VIDEO_PATH)
+    def open_video(self):
+        if  not os.path.isfile(self.args.VIDEO_PATH):
+            raise Exception("Error:input video path is not exist")
+        self.vdo = cv2.VideoCapture(self.args.VIDEO_PATH)
         self.im_width = int(self.vdo.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.im_height = int(self.vdo.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
         if self.args.save_dir:
             if not os.path.exists(self.args.save_dir):
                 os.makedirs(self.args.save_dir)
             #fourcc =  cv2.VideoWriter_fourcc(*'MJPG')
             #self.output = cv2.VideoWriter(self.args.save_path, fourcc, 20, (self.im_width,self.im_height))
-
-        assert self.vdo.isOpened()
-        return self
-
-    
-    def __exit__(self, exc_type, exc_value, exc_traceback):
-        if exc_type:
-            print(exc_type, exc_value, exc_traceback)
-
-    def xcycah2xcyc(self,xyah):
-        xyah = np.array(xyah)
-        xyah = xyah[:,:4]
-        w = xyah[:,2] * xyah[:,3]
-        h = xyah[:,3]
-        xc = xyah[:,0] #+ w/2
-        yc = xyah[:,1] #+ h/2
-        return np.vstack([xc,yc,w,h]).T
-
-    def xcycah2xyxy(self,xcycah):
-        xcycah = np.array(xcycah)
-        xcycah = xcycah[:,:4]
-        w = xcycah[:,2] * xcycah[:,3]
-        h = xcycah[:,3]
-        x2 = xcycah[:,0] + w/2
-        y2 = xcycah[:,1] + h/2
-        x1 = xcycah[:,0] - w/2
-        y1 = xcycah[:,1] - h/2
-        return np.vstack([x1,y1,x2,y2]).T
-    
+        if not self.vdo.isOpened():
+            raise Exception('open video failed')
     def xyxy2xcyc(self,xywh):
         w = xywh[:,2] - xywh[:,0]
         h = xywh[:,3] - xywh[:,1]
@@ -102,18 +76,6 @@ class MOTTracker(object):
         xc = xywh[:,0]+xywh[:,2]/2
         yc = xywh[:,1]+xywh[:,3]/2
         return np.vstack([xc,yc,xywh[:,2],xywh[:,3]]).T
-    def xywh2xyxy(self,xywh):
-        xywh = np.array(xywh)
-        x2 = xywh[:,0]+xywh[:,2]
-        y2 = xywh[:,1]+xywh[:,3]
-        return np.vstack([xywh[:,0],xywh[:,1],x2,y2]).T
-
-    def xcyc2xcycah(self,bbox_xcycwh):
-        bbox_xcycwh = np.array(bbox_xcycwh,dtype=np.float32)
-        xc = bbox_xcycwh[:,0] #- bbox_xcycwh[:,2]/2
-        yc = bbox_xcycwh[:,1] #- bbox_xcycwh[:,3]/2
-        a = bbox_xcycwh[:,2] / bbox_xcycwh[:,3]
-        return np.vstack([xc,yc,a,bbox_xcycwh[:,3]]).T
     def widerbox(self,boxes):
         x1 = boxes[:,0]
         y1 = boxes[:,1]
@@ -151,6 +113,30 @@ class MOTTracker(object):
                 cv2.imwrite(save_path,crop_img)
             else:
                 continue
+    def show_bboxs(self,img, bbox, identities=None,fgs=[]):
+        imh,imw = img.shape[:2]
+        for i,box in enumerate(bbox):
+            box = list(map(int,box))
+            x1,y1,x2,y2 = box
+            h = y2-y1
+            tm_fg = fgs[i]
+            if tm_fg == 0:
+                self.out_num +=1
+            elif tm_fg == 1:
+                self.in_num +=1
+            # box text and bar
+            id = int(identities[i]) if identities is not None else 0    
+            color = COLORS_10[id%len(COLORS_10)]
+            label = '{}{:d}'.format("", id)
+            #t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 2 , 2)[0]
+            cv2.rectangle(img,(x1, y1),(x2,y2),color,4)
+            #cv2.rectangle(img,(x1, y1),(x1+t_size[0]+3,y1+t_size[1]+4), color,-1)
+            #cv2.putText(img,label,(x1,y1+t_size[1]+4), 0, 1e-2*h, [255,255,255], 1)
+            cv2.putText(img,label,(x1,y1+4), 0, 1e-2*h, [255,255,255], 4)
+        txt = "in:{}  out:{}".format(self.in_num,self.out_num)
+        cv2.putText(img,txt,(imw-100,20),0,0.5,[0,0,255],2)
+        cv2.line(img,(200,0),(200,imh-1),(255,0,0),2,4)
+        return img
 
     def detect(self):
         cnt = 0
@@ -158,12 +144,12 @@ class MOTTracker(object):
         detect_fg = True
         total_time = 0
         outputs = []
-        while self.vdo.grab(): 
+        while self.vdo.isOpened(): 
             start = time.time()
-            _, ori_im = self.vdo.retrieve()
+            _, ori_im = self.vdo.read()
             im = cv2.cvtColor(ori_im, cv2.COLOR_BGR2RGB)
             im = np.array([im])
-            if cnt % 5 ==0 or detect_fg:
+            if cnt % 20 ==0 or detect_fg:
                 # bbox_xcycwh, cls_conf, cls_ids = self.yolo3(im)
                 # mask = cls_ids==0
                 # bbox_xcycwh = bbox_xcycwh[mask]
@@ -181,6 +167,11 @@ class MOTTracker(object):
                     cls_conf = rectangles[:,4]
                 elif self.command_type=='person':
                     bboxes,cls_conf = self.person_detect.test_img_org(ori_im)
+                    if len(bboxes)==0:
+                        continue
+                    bbox_xcycwh = self.xywh2xcycwh(bboxes)
+                elif self.command_type == 'head':
+                    bboxes,cls_conf = self.head_detect.inference_img(ori_im)
                     if len(bboxes)==0:
                         continue
                     bbox_xcycwh = self.xywh2xcycwh(bboxes)
@@ -216,8 +207,10 @@ class MOTTracker(object):
             if len(outputs) > 0:
                 #outputs = rectangles
                 bbox_xyxy = outputs[:,:4]
-                identities = outputs[:,-1] #np.zeros(outputs.shape[0]) 
-                ori_im = draw_bboxes(ori_im, bbox_xyxy, identities)
+                identities = outputs[:,4] #np.zeros(outputs.shape[0]) 
+                fgs = outputs[:,-1]
+                #ori_im = draw_bboxes(ori_im, bbox_xyxy, identities)
+                ori_im = self.show_bboxs(ori_im,bbox_xyxy,identities,fgs)
                 #self.save_track_results(bbox_xyxy,ori_im,identities)
             print("frame: {} time: {}s, fps: {}".format(cnt,consume, 1/(end-start)))
             cnt+=1
@@ -246,11 +239,12 @@ def parse_args():
     parser.add_argument("--display_height", type=int, default=600)
     parser.add_argument("--save_dir", type=str, default=None)
     parser.add_argument("--img_dir",type=str,default='',help='')
-    parser.add_argument("--use_cuda",type=int,default=0)
+    parser.add_argument("--ctx",type=int,default=0)
     parser.add_argument("--face_load_num",type=int,default=0,help='')
     parser.add_argument("--person_load_num",type=int,default=0,help='')
     parser.add_argument("--detect_model",type=str,default="../../models/mxnet_model")
     parser.add_argument("--feature_model",type=str,default="../../models/mxnet")
+    parser.add_argument("--headmodelpath",type=str,default="../../models/head")
     parser.add_argument('--tracker_type',type=str,default='mosse')
     parser.add_argument('--mot_type',type=str,default='face',help='face or person')
     return parser.parse_args()
@@ -259,5 +253,5 @@ def parse_args():
 if __name__=="__main__":
     #"demo.avi"
     args = parse_args()
-    with MOTTracker(args) as det:
-        det.detect()
+    det = MOTTracker(args)
+    det.detect()

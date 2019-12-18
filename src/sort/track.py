@@ -1,6 +1,7 @@
 # vim: expandtab:ts=4:sw=4
 import sys
 import os 
+import collections
 sys.path.append(os.path.join(os.path.dirname(__file__),'../configs'))
 from config import cfgs
 
@@ -67,19 +68,20 @@ class Track:
     """
 
     def __init__(self, mean, covariance, track_id, n_init, max_age,
-                 feature=None):
+                 feature=None,trajectory=None):
         self.mean = mean
         self.covariance = covariance
         self.track_id = track_id
         self.hits = 1
         self.age = 1
         self.time_since_update = 0
-
         self.state = TrackState.Tentative
-        self.features = []
+        self.features = collections.deque(maxlen=cfgs.feature_max_keep)
+        self.trajects = collections.deque(maxlen=cfgs.feature_max_keep)
         if feature is not None:
             self.features.append(feature)
-
+        if trajectory is not None:
+            self.trajects.append(trajectory)
         self._n_init = n_init
         self._max_age = max_age
 
@@ -136,12 +138,11 @@ class Track:
             The Kalman filter.
         detection : Detection
             The associated detection.
-
         """
         self.mean, self.covariance = kf.update(
             self.mean, self.covariance, detection.to_xyah())
         self.features.append(detection.feature)
-
+        self.trajects.append(detection.center)
         self.hits += 1
         self.time_since_update = 0
         if self.state == TrackState.Tentative and self.hits >= self._n_init:

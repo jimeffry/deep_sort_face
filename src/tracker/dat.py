@@ -58,6 +58,8 @@ class DAT(BaseCF):
         self._prob_lut_distractor=copy.deepcopy(self.prob_lut_)
         self._prob_lut_masked=copy.deepcopy(self.prob_lut_)
         #self.adaptive_threshold_=get_adaptive_threshold(prob_map,obj_rect_surr)
+        self.target_pos_history.clear()
+        self.target_sz_history.clear()
         self.target_pos_history.append((self._center[0]/self._scale_factor,self._center[1]/self._scale_factor))
         self.target_sz_history.append((self._target_sz[0]/self._scale_factor,self._target_sz[1]/self._scale_factor))
 

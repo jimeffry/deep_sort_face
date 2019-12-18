@@ -10,7 +10,7 @@ class StapleConfig:
     merge_factor = 0.3
     den_per_channel = False
 
-    scale_adaptation = True
+    scale_adaptation = False
     hog_scale_cell_size = 4
     interp_factor_scale = 0.025
     scale_sigma_factor = 1. / 4

@@ -20,15 +20,18 @@ class DeepSort(object):
         self.nms_max_overlap = 1.0
         self.img_size = [112,112]
         self.mot_type = mot_type
-        if mot_type == 'person':
-            self.extractor = Extractor(model_path, use_cuda=use_cuda)
-        else:
+        self.line_inout = cfgs.inout_point
+        if mot_type == 'face':
             self.extractor = mx_FaceRecognize(model_path,epoch_num,self.img_size)
+        else:
+            self.extractor = Extractor(model_path, use_cuda=use_cuda)
         max_cosine_distance = cfgs.max_cosine_distance #max_dist
         nn_budget = 100
         metric = NearestNeighborDistanceMetric("cosine", max_cosine_distance, nn_budget)
         self.tracker = Tracker(metric)
         self.feature_tmp = []
+        self.history_inout = dict()
+        self.xy = 0
 
     def update(self, bbox_xcycwh, confidences, ori_img,update_fg=True):
         self.height, self.width = ori_img.shape[:2]
@@ -49,7 +52,6 @@ class DeepSort(object):
         # update tracker
         self.tracker.predict()
         self.tracker.update(detections)
-
         # output bbox identities
         outputs = []
         for track in self.tracker.tracks:
@@ -59,10 +61,39 @@ class DeepSort(object):
             box = track.to_tlwh()
             x1,y1,x2,y2 = self._tlwh_to_xyxy(box)
             track_id = track.track_id
-            outputs.append(np.array([x1,y1,x2,y2,track_id], dtype=np.int))
+            fg = self.check_in_out(track)
+            outputs.append(np.array([x1,y1,x2,y2,track_id,fg], dtype=np.int))
         if len(outputs) > 0:
             outputs = np.stack(outputs,axis=0)
         return outputs
+    def check_in_out(self,track):
+        '''
+        according to the trajectories of a track, judge the moving direction and if move out or in
+        1: in
+        0: out
+        2: keep state
+        -1: init state
+        '''
+        tmp_centers = track.trajects
+        keyname = track.track_id
+        fg = self.history_inout.setdefault(keyname,-1)
+        trj_num = len(tmp_centers)
+        if trj_num >2:
+            p_start = tmp_centers[0]
+            p_end = tmp_centers[trj_num-1]
+            diff = p_end[self.xy] - p_start[self.xy]
+            if diff > 0 and p_start[self.xy] < self.line_inout[self.xy] and p_end[self.xy] > self.line_inout[self.xy]:
+                if fg == -1:
+                    fg = 0
+                elif fg == 0:
+                    fg = 2
+            elif diff < 0 and p_start[self.xy] > self.line_inout[self.xy] and p_end[self.xy] < self.line_inout[self.xy]:
+                if fg == -1:
+                    fg = 1
+                elif fg == 1:
+                    fg = 2
+        self.history_inout[keyname] = fg 
+        return fg
 
 
     """

@@ -8,8 +8,8 @@ class Detection(object):
 
     Parameters
     ----------
-    tlwh : array_like
-        Bounding box in format `(x, y, w, h)`.
+    xywh : array_like
+        Bounding box in format `(center x, center y, width, height)
     confidence : float
         Detector confidence score.
     feature : array_like
@@ -17,8 +17,8 @@ class Detection(object):
 
     Attributes
     ----------
-    tlwh : ndarray
-        Bounding box in format `(top left x, top left y, width, height)`.
+    xywh : ndarray
+        Bounding box in format `(center x, center y, width, height)`.
     confidence : ndarray
         Detector confidence score.
     feature : ndarray | NoneType
@@ -26,10 +26,11 @@ class Detection(object):
 
     """
 
-    def __init__(self, tlwh, confidence, feature):
-        self.tlwh = self.xcycwh_to_tlwh(tlwh)
+    def __init__(self, xywh, confidence, feature):
+        self.tlwh = self.xcycwh_to_tlwh(xywh)
         self.confidence = float(confidence)
         self.feature = np.asarray(feature, dtype=np.float32)
+        self.center = xywh[:2]
 
     def xcycwh_to_tlwh(self,bbox_xywh):
         """Convert bounding box to format `(x1, y1, width,height)`, i.e.,

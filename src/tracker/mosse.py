@@ -81,6 +81,9 @@ class MOSSE(BaseCF):
         tmp = np.sum(W[:, :2], axis=1).reshape((2, 1))
         W[:, 2:] = center_warp - center_warp * tmp
         warped = cv2.warpAffine(img, W, (w, h), cv2.BORDER_REFLECT)
+        # imshow = np.array(warped*255,np.uint8)
+        # cv2.imshow('warp',imshow)
+        # cv2.waitKey(0)
         return warped
 
 
