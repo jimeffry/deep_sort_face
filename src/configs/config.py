@@ -14,4 +14,7 @@ cfgs.feature_max_keep = 100
 cfgs.max_iou_distance=0.7
 cfgs.max_age=70
 cfgs.confirm_frame_cnt=3
-cfgs.inout_point = [200,0]
+cfgs.inout_point = [0,150]
+# if 0, y-axis-door: down2up is in, up2down is out; x-axis-door: right2left is in,or out
+# if 1, y-axis-door: up2down is in, or out; x-axis-door: left2right is in,or out
+cfgs.inout_type = 1 

@@ -18,10 +18,10 @@ cfg.ANCHOR_SIZES = [16, 32, 64, 128, 256, 512]
 cfg.CLIP = False
 cfg.VARIANCE = [0.1, 0.2]
 # detection config
-cfg.NMS_THRESH = 0.5
+cfg.NMS_THRESH = 0.3
 cfg.NMS_TOP_K = 300
 cfg.TOP_K = 750
-cfg.CONF_THRESH = 0.3
+cfg.CONF_THRESH = 0.5
 cfg.resize_width = 640
 cfg.resize_height = 640
 cfg.NUM_CLASSES = 2

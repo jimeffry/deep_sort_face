@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.utils.data as data
 import torch.backends.cudnn as cudnn
 import torchvision.transforms as transforms
+from torch.autograd import Variable
 
 import cv2
 import time
@@ -20,8 +21,10 @@ from matplotlib import pyplot as plt
 
 from head_detection import Detect
 from config_head import cfg
-from s3fd import build_s3fd
-from torch.autograd import Variable
+# from s3fd import build_s3fd
+from vgg16 import S3FD
+from priorbox import PriorBox
+from box_utils import nms_py
 
 def parms():
     parser = argparse.ArgumentParser(description='s3df demo')
@@ -55,66 +58,23 @@ class HeadDetect(object):
         self.img_dir = args.img_dir
         
         self.detect = Detect(cfg)
+        self.Prior = PriorBox(cfg)
+        with torch.no_grad():
+            self.priors =  self.Prior.forward()
 
     def loadmodel(self,modelpath):
         if self.use_cuda:
             device = 'cuda'
         else:
             device = 'cpu'
-        self.net = build_s3fd('test', cfg.NUM_CLASSES)
+        # self.net = build_s3fd('test', cfg.NUM_CLASSES)
+        self.net = S3FD(cfg.NUM_CLASSES)
         self.net.load_state_dict(torch.load(modelpath,map_location=device))
         self.net.eval()
+        # print(self.net)
         if self.use_cuda:
             self.net.cuda()
             cudnn.benckmark = True
-    def get_hotmaps(self,conf_maps):
-        '''
-        conf_maps: feature_pyramid maps for classification
-        '''
-        hotmaps = []
-        print('feature maps num:',len(conf_maps))
-        for tmp_map in conf_maps:
-            batch,h,w,c = tmp_map.size()
-            tmp_map = tmp_map.view(batch,h,w,-1,self.num_classes)
-            tmp_map = tmp_map[0,:,:,:,1:]
-            tmp_map_soft = torch.nn.functional.softmax(tmp_map,dim=3)
-            cls_mask = torch.argmax(tmp_map_soft,dim=3,keepdim=True)
-            #score,cls_mask = torch.max(tmp_map_soft,dim=4,keepdim=True)
-            #cls_mask = cls_mask.unsqueeze(4).expand_as(tmp_map_soft)
-            #print(cls_mask.data.size(),tmp_map_soft.data.size())
-            tmp_hotmap = tmp_map_soft.gather(3,cls_mask)
-            map_mask = torch.argmax(tmp_hotmap,dim=2,keepdim=True)
-            tmp_hotmap = tmp_hotmap.gather(2,map_mask)
-            tmp_hotmap.squeeze_(3)
-            tmp_hotmap.squeeze_(2)
-            print('map max:',tmp_hotmap.data.max())
-            hotmaps.append(tmp_hotmap.data.numpy())
-        return hotmaps
-    def display_hotmap(self,hotmaps):
-        '''
-        hotmaps: a list of hot map ,every shape is [1,h,w]
-        '''       
-        row_num = 2
-        col_num = 3
-        fig, axes = plt.subplots(nrows=row_num, ncols=col_num, constrained_layout=True)
-        for i in range(row_num):
-            for j in range(col_num):
-                #ax_name = 'ax_%s' % (str(i*col_num+j))
-                #im_name = 'im_%s' % (str(i*col_num+j))
-                ax_name = axes[i,j]
-                im_name = ax_name.imshow(hotmaps[i*col_num+j])
-                ax_name.set_title("feature_%d" %(i*col_num+j+3))
-        #**************************************************************
-        img = hotmaps[-1]
-        min_d = np.min(img)
-        max_d = np.max(img)
-        tick_d = []
-        while min_d < max_d:
-            tick_d.append(min_d)
-            min_d+=0.01
-        cb4 = fig.colorbar(im_name) #ticks=tick_d)
-        plt.savefig('hotmap.png')
-        plt.show()
     def propress(self,img):
         rgb_mean = np.array([123.,117.,104.])[np.newaxis, np.newaxis,:].astype('float32')
         img = cv2.resize(img,(cfg.resize_width,cfg.resize_height))
@@ -124,16 +84,38 @@ class HeadDetect(object):
         #img = img[:,:,::-1]
         img = np.transpose(img,(2,0,1))
         return img
-    def xyxy2xywh(self,bbox_score,scale):
+    def xyxy2xywh(self,bbox_score):
         bboxes = bbox_score[0]
-        bbox = bboxes[0] * scale
+        bbox = bboxes[0] 
         score = bboxes[1]
         bbox[:,2] = bbox[:,2] -bbox[:,0] 
         bbox[:,3] = bbox[:,3] -bbox[:,1]  
-        return bbox,score
+        bbox_out=[]
+        scores = []
+        for j in range(bbox.shape[0]):
+            dets = bbox[j] 
+            sc = score[j]
+            min_re = min(dets[2],dets[3])
+            if min_re < 16:
+                thresh = 0.2
+            else:
+                thresh = 0.8
+            if sc >= thresh:
+                bbox_out.append(dets)
+                scores.append(sc)
+        return np.array(bbox_out),np.array(scores)
+    def nms_filter(self,bboxes,scale):
+        boxes = bboxes[0][0] * scale
+        scores = bboxes[0][1]
+        ids, count = nms_py(boxes, scores, 0.3,1000)
+        boxes = boxes[ids[:count]]
+        scores = scores[ids[:count]]
+        return [[boxes,scores]]
     def inference_img(self,imgorg):
         t1 = time.time()
         imgh,imgw = imgorg.shape[:2]
+        scale = np.array([imgw,imgh,imgw,imgh])
+        scale = np.expand_dims(scale,0)
         img = self.propress(imgorg.copy())
         bt_img = Variable(torch.from_numpy(img).unsqueeze(0))
         if self.use_cuda:
@@ -141,33 +123,21 @@ class HeadDetect(object):
         output = self.net(bt_img)
         t2 = time.time()
         with torch.no_grad():
-            bboxes = self.detect.forward(output[0],output[1],output[2])
+            bboxes = self.detect(output[0],output[1],self.priors)
         t3 = time.time()
+        bboxes = self.nms_filter(bboxes,scale)
         print('consuming:',t2-t1,t3-t2)
         #showimg = self.label_show(bboxes,imgorg)
         bbox = []
         score = []
-        scale = np.array([imgw,imgh,imgw,imgh])
-        scale = np.expand_dims(scale,0)
         if len(bboxes)>0:
-            bbox,score = self.xyxy2xywh(bboxes,scale)
+            bbox,score = self.xyxy2xywh(bboxes)
         # showimg = self.label_show(bbox,score,imgorg)
         return bbox,score
+        # return showimg,bbox
     def label_show(self,rectangles,scores,img):
-        imgh,imgw,_ = img.shape
-        scale = np.array([imgw,imgh,imgw,imgh])
-        # for i in range(len(rectangles)):
-        #     bbox = rectangles[i][0]
-        #     scores = rectangles[i][1]
-        #     for j in range(bbox.shape[0]):
-        #         # tmp = np.array(tmp)
-        #         score = scores[j]
-        #         dets = bbox[j] * scale
-        #         x1,y1,x2,y2 = dets
-        #         cv2.rectangle(img,(int(x1),int(y1)),(int(x2),int(y2)),(0,0,255),2)
-        #         txt = "{:.3f}".format(score)
-        #         point = (int(x1),int(y1-5))
-        #         #cv2.putText(img,txt,point,cv2.FONT_HERSHEY_COMPLEX,0.5,(0,255,0),1)
+        # imgh,imgw,_ = img.shape
+        # scale = np.array([imgw,imgh,imgw,imgh])
         for j in range(rectangles.shape[0]):
             dets = rectangles[j]
             score = scores[j]

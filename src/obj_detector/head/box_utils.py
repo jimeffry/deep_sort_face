@@ -153,11 +153,9 @@ def nms_t(boxes,scores, threshold=0.5,topk=200,mode='Union'):
 def nms_py(boxes, scores, threshold=0.7,topk=200,mode='Union'):
     pick = []
     count = 0
-    if boxes.size()==0:
+    if len(boxes)==0:
         return pick,count
     # print('score',np.shape(scores))
-    boxes = boxes.detach().numpy()
-    scores = scores.detach().numpy()
     x1 = boxes[:,0]
     y1 = boxes[:,1]
     x2 = boxes[:,2]

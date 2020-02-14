@@ -31,7 +31,10 @@ class DeepSort(object):
         self.tracker = Tracker(metric)
         self.feature_tmp = []
         self.history_inout = dict()
-        self.xy = 0
+        # if xy is 0 ,it will calculate inout for the door is right or left with x-axis
+        # if xy is 1, it will calculate inout for the door is up or down with y-axis
+        self.xy = 1
+        self.inout_type = cfgs.inout_type
 
     def update(self, bbox_xcycwh, confidences, ori_img,update_fg=True):
         self.height, self.width = ori_img.shape[:2]
@@ -83,15 +86,27 @@ class DeepSort(object):
             p_end = tmp_centers[trj_num-1]
             diff = p_end[self.xy] - p_start[self.xy]
             if diff > 0 and p_start[self.xy] < self.line_inout[self.xy] and p_end[self.xy] > self.line_inout[self.xy]:
-                if fg == -1:
-                    fg = 0
-                elif fg == 0:
-                    fg = 2
+                if self.inout_type==0:
+                    if fg == -1:
+                        fg = 0
+                    elif fg == 0:
+                        fg = 2
+                else:
+                    if fg == -1:
+                        fg = 1
+                    elif fg == 1:
+                        fg = 2
             elif diff < 0 and p_start[self.xy] > self.line_inout[self.xy] and p_end[self.xy] < self.line_inout[self.xy]:
-                if fg == -1:
-                    fg = 1
-                elif fg == 1:
-                    fg = 2
+                if self.inout_type==0:
+                    if fg == -1 :
+                        fg = 1
+                    elif fg == 1:
+                        fg = 2
+                else:
+                    if fg == -1:
+                        fg = 0
+                    elif fg == 0:
+                        fg = 2
         self.history_inout[keyname] = fg 
         return fg
 

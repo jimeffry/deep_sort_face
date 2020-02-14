@@ -188,29 +188,6 @@ class S3FD(nn.Module):
             )
         return output
 
-    def load_weights(self, base_file):
-        other, ext = os.path.splitext(base_file)
-        if ext == '.pkl' or '.pth':
-            print('Loading weights into state dict...')
-            mdata = torch.load(base_file,
-                               map_location=lambda storage, loc: storage)
-            #weights = mdata['weight']
-            #epoch = mdata['epoch']
-            epoch=1
-            self.load_state_dict(mdata)
-            print('Finished!')
-        else:
-            print('Sorry only .pth and .pkl files supported.')
-        return epoch
-
-    def xavier(self, param):
-        init.xavier_uniform(param)
-
-    def weights_init(self, m):
-        if isinstance(m, nn.Conv2d):
-            self.xavier(m.weight.data)
-            m.bias.data.zero_()
-
 
 vgg_cfg = [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'C', 512, 512, 512, 'M',
            512, 512, 512, 'M']

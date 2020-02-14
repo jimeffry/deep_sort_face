@@ -16,7 +16,6 @@ class Detect(object):
     scores and threshold to a top_k number of output predictions for both
     confidence score and locations.
     """
-
     def __init__(self, cfg):
         self.num_classes = cfg.NUM_CLASSES
         self.top_k = cfg.TOP_K
@@ -26,8 +25,7 @@ class Detect(object):
         self.nms_top_k = cfg.NMS_TOP_K
         self.softmax = nn.Softmax(dim=-1)
 
-
-    def forward(self, loc_data, conf_data, prior_data):
+    def __call__(self, loc_data, conf_data, prior_data):
         """
         Args:
             loc_data: (tensor) Loc preds from loc layers
@@ -62,11 +60,11 @@ class Detect(object):
                 continue
             l_mask = c_mask.unsqueeze(1).expand_as(boxes)
             boxes_ = boxes[l_mask].view(-1, 4)
-            ids, count = nms(boxes_, scores, self.nms_thresh, self.nms_top_k)
+            # ids, count = nms(boxes_, scores, self.nms_thresh, self.nms_top_k)
             # ids, count = nms_py(boxes_, scores, self.nms_thresh, self.nms_top_k)
-            count = count if count < self.top_k else self.top_k
+            # count = count if count < self.top_k else self.top_k
             #ids = torch.tensor(ids)
-            if count >0:
-                box_score = [boxes_[ids[:count]].detach().numpy(),scores[ids[:count]].detach().numpy()]
-                output.append(box_score)
+            # if count >0:
+            box_score = [boxes_.detach().numpy(),scores.detach().numpy()] #[boxes_[ids[:count]].detach().numpy(),scores[ids[:count]].detach().numpy()]
+            output.append(box_score)
         return output

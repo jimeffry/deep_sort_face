@@ -135,7 +135,7 @@ class MOTTracker(object):
             cv2.putText(img,label,(x1,y1+4), 0, 1e-2*h, [255,255,255], 4)
         txt = "in:{}  out:{}".format(self.in_num,self.out_num)
         cv2.putText(img,txt,(imw-100,20),0,0.5,[0,0,255],2)
-        cv2.line(img,(200,0),(200,imh-1),(255,0,0),2,4)
+        cv2.line(img,(0,150),(imw-1,150),(255,0,0),2,4)
         return img
 
     def detect(self):
